@@ -1,0 +1,49 @@
+# Binaries
+aws-profile
+aws-profile.exe
+awsp
+awsp.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build
+*.test
+*.out
+/bin/
+/dist/
+/build/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency
+vendor/
+
+# Coverage
+*.cover
+coverage.out
+coverage.html
+
+# Debug
+__debug_bin
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+*.local
