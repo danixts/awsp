@@ -4,35 +4,53 @@ CLI para cambiar entre perfiles y regiones de AWS. Modo interactivo con selector
 
 ## Instalación
 
-**Opción 1 – Instalador (recomendado, multiplataforma)**
+**Opción 1 – Un solo comando (recomendado, no requiere Go)**
 
-Desde el repo (con Go instalado):
+Descarga el binario desde [Releases](https://github.com/danixts/awsp/releases) e instala en `~/.local/bin` + configura shell (awsp + completion):
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/danixts/awsp/main/install.sh | bash
+```
+
+O con wget:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/danixts/awsp/main/install.sh | bash
+```
+
+Luego reinicia la terminal o ejecuta `source ~/.zshrc` (o tu config).
+
+**Opción 2 – Desde código (requiere Go)**
+
+Solo necesitas Go si compilas desde el repo:
+
+```bash
+git clone https://github.com/danixts/awsp.git && cd awsp
 go run . install
 ```
 
-o si ya tienes el binario:
+O si ya tienes el binario local: `./aws-profile install`.
 
-```bash
-./aws-profile install
-```
-
-El comando:
-1. **Si estás en el proyecto** (hay `go.mod`): compila con `go build` y luego copia el binario `aws-profile` a `~/.local/bin`.
-2. **Si ejecutas un `aws-profile` ya instalado**: no recompila; solo copia el binario actual. Para una versión nueva, ejecuta `go run . install` desde el proyecto.
-3. Pide elegir shell: **Zsh (Oh My Zsh)**, **Bash** o **Windows (PowerShell)**.
-4. Añade la función **awsp** (atajo interactivo) y el autocompletado para `aws-profile`.
-
-Reinicia la terminal o ejecuta `source ~/.zshrc` (o tu config).
-
-**Opción 2 – Make (solo copia)**
+**Opción 3 – Make (solo copia)**
 
 ```bash
 make install
 ```
 
 Copia el binario a `$(GOPATH)/bin/aws-profile`. Asegúrate de tener ese directorio en tu `PATH`.
+
+## Releases (automático con GitHub Action)
+
+Al hacer push de un **tag** `v*` (ej. `v1.0.0`), el workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) compila los binarios y publica la release con los assets.
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Tras unos minutos, la release aparecerá en [Releases](https://github.com/danixts/awsp/releases) con los binarios: `aws-profile-linux-amd64`, `aws-profile-linux-arm64`, `aws-profile-darwin-amd64`, `aws-profile-darwin-arm64`, `aws-profile-windows-amd64.exe`.
+
+Para compilar y subir manualmente: `make release` y luego subir los archivos de `dist/` a una release en GitHub.
 
 ## Uso
 
@@ -76,8 +94,11 @@ Con `aws-profile install` se genera el script en `~/.config/awsp/completion.zsh`
 
 ## Desarrollo
 
+Requisito: **Go** (solo para compilar desde código; la instalación con `curl` no necesita Go).
+
 ```bash
-make build   # compilar
-make run     # ejecutar con go run
-make clean   # borrar binario
+make build    # compilar binario local
+make run      # ejecutar con go run
+make release  # binarios para Linux/macOS/Windows (dist/)
+make clean    # borrar binario y dist/
 ```

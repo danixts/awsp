@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -o dist/aws-profile-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -o dist/aws-profile-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -o dist/aws-profile-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -o dist/aws-profile-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -o dist/aws-profile-windows-amd64.exe .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
