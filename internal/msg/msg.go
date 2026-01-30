@@ -18,4 +18,11 @@ const (
 	FavoriteRemoved   = "Removed '%s' from favorites\n"
 	FavoritesList      = "Favorites:\n"
 	NoFavorites       = "No favorites set\n"
+
+	ErrGatewayList        = "Error listing API Gateways: %v\n"
+	ErrGatewayResources   = "Error listing resources: %v\n"
+	NoGateways            = "No API Gateways found\n"
+	GatewayResources      = "\nResources and methods for %s:\n\n"
+	ErrGatewayIntegration = "Endpoint is not Lambda or integration not found: %v\n"
+	GatewayLogsTail       = "\nTailing logs for %s — Press 'q' + Enter to stop (or Ctrl+C)\n\n"
 )

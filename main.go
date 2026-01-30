@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/danixts/awsp/internal/apigateway"
 	"github.com/danixts/awsp/internal/aws"
 	"github.com/danixts/awsp/internal/install"
 	"github.com/danixts/awsp/internal/msg"
@@ -17,6 +18,7 @@ import (
 var (
 	flagValidate bool
 	flagFull     bool
+	flagGateway  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -78,15 +80,24 @@ var installCmd = &cobra.Command{
 	RunE:  runInstall,
 }
 
+var gatewayCmd = &cobra.Command{
+	Use:   "gateway",
+	Short: "List API Gateways and view methods (interactive)",
+	Long:  "Lists your API Gateways, lets you pick one and view its resources and HTTP methods. Includes option to go back and pick another API.",
+	RunE:  runGateway,
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagFull, "full", "f", false, "Export all AWS vars (including AWS_SDK_LOAD_CONFIG)")
 	rootCmd.PersistentFlags().BoolVarP(&flagValidate, "validate", "v", false, "Verify credentials with aws sts get-caller-identity")
+	rootCmd.PersistentFlags().BoolVarP(&flagGateway, "gateway", "g", false, "Open API Gateway interactive (list APIs, view methods, logs)")
 
 	rootCmd.AddCommand(switchCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(currentCmd)
 	rootCmd.AddCommand(favoriteCmd)
 	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(gatewayCmd)
 
 	favoriteCmd.AddCommand(favoriteAddCmd)
 	favoriteCmd.AddCommand(favoriteRemoveCmd)
@@ -124,6 +135,9 @@ func curProfileAndRegion() (profile, region string) {
 }
 
 func runInteractive(cmd *cobra.Command, args []string) error {
+	if flagGateway {
+		return runGateway(cmd, args)
+	}
 	if !isatty.IsTerminal(os.Stdout.Fd()) {
 		last, err := store.LoadLast()
 		if err != nil || last.Profile == "" {
@@ -284,6 +298,106 @@ func runFavoriteList(cmd *cobra.Command, args []string) error {
 
 func runInstall(cmd *cobra.Command, args []string) error {
 	return install.Run()
+}
+
+func runGateway(cmd *cobra.Command, args []string) error {
+	if !isatty.IsTerminal(os.Stdout.Fd()) {
+		fmt.Fprintln(os.Stderr, "awsp gateway requires an interactive terminal")
+		os.Exit(1)
+	}
+	var cachedAPIs []apigateway.RestAPI
+	cachedResources := make(map[string][]apigateway.ResourceWithMethods)
+	cachedLogGroups := make(map[string]string)
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = os.Getenv("AWS_DEFAULT_REGION")
+	}
+	for {
+		if len(cachedAPIs) == 0 {
+			apis, err := apigateway.GetRestAPIs()
+			if err != nil {
+				fmt.Printf(msg.ErrGatewayList, err)
+				os.Exit(1)
+			}
+			if len(apis) == 0 {
+				fmt.Print(msg.NoGateways)
+				os.Exit(0)
+			}
+			cachedAPIs = apis
+		}
+		selected, reloadAPIs, err := selector.RunGatewayAPISelector(cachedAPIs, true)
+		if err != nil {
+			fmt.Println(msg.Canceled)
+			os.Exit(0)
+		}
+		if reloadAPIs {
+			cachedAPIs = nil
+			continue
+		}
+		resources, ok := cachedResources[selected.ID]
+		if !ok {
+			var err error
+			resources, err = apigateway.GetResources(selected.ID)
+			if err != nil {
+				fmt.Printf(msg.ErrGatewayResources, err)
+				os.Exit(1)
+			}
+			cachedResources[selected.ID] = resources
+		}
+		fmt.Printf(msg.GatewayResources, selected.Name)
+		fmt.Print(apigateway.FormatResourcesTable(resources))
+		for {
+			choice, err := selector.RunAfterResourcesSelector()
+			if err != nil {
+				fmt.Println(msg.Canceled)
+				os.Exit(0)
+			}
+			switch choice {
+			case selector.ChoiceExit:
+				return nil
+			case selector.ChoiceBack:
+				goto nextAPI
+			case selector.ChoiceReload:
+				delete(cachedResources, selected.ID)
+				var err error
+				resources, err = apigateway.GetResources(selected.ID)
+				if err != nil {
+					fmt.Printf(msg.ErrGatewayResources, err)
+					os.Exit(1)
+				}
+				cachedResources[selected.ID] = resources
+				fmt.Printf(msg.GatewayResources, selected.Name)
+				fmt.Print(apigateway.FormatResourcesTable(resources))
+				continue
+			case selector.ChoiceViewLogs:
+				endpoints := apigateway.EndpointsFromResources(resources)
+				ep, err := selector.RunEndpointSelector(endpoints)
+				if err != nil {
+					fmt.Println(msg.Canceled)
+					continue
+				}
+				logKey := selected.ID + ":" + ep.ResourceID + ":" + ep.Method
+				logGroup, ok := cachedLogGroups[logKey]
+				if !ok {
+					var err error
+					logGroup, err = apigateway.GetIntegrationLambdaLogGroup(selected.ID, ep.ResourceID, ep.Method)
+					if err != nil {
+						fmt.Printf(msg.ErrGatewayIntegration, err)
+						continue
+					}
+					cachedLogGroups[logKey] = logGroup
+				}
+				since, err := selector.RunTimeRangeSelector(apigateway.DefaultTimeRanges)
+				if err != nil {
+					fmt.Println(msg.Canceled)
+					continue
+				}
+				fmt.Printf(msg.GatewayLogsTail, logGroup)
+				_ = apigateway.TailLogs(logGroup, since, region, true)
+			}
+		}
+	nextAPI:
+	}
 }
 
 func main() {
