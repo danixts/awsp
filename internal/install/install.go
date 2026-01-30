@@ -42,33 +42,9 @@ func InstallDir() (string, error) {
 	return localBin, nil
 }
 
-func FindRepoRoot() (string, bool) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", false
-	}
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return "", false
-}
-
 const binaryName = "aws-profile"
 
-func removeExisting(installDir string) {
-	bin := filepath.Join(installDir, binaryName)
-	_ = os.Remove(bin)
-	if runtime.GOOS == "windows" {
-		_ = os.Remove(bin + ".exe")
-	}
+func removeCompletionOnly() {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
@@ -78,19 +54,12 @@ func removeExisting(installDir string) {
 	_ = os.Remove(filepath.Join(configDir, "completion.bash"))
 }
 
-func BuildBinary(repoRoot string) (string, error) {
-	out := filepath.Join(repoRoot, binaryName)
+func removeExistingBinary(installDir string) {
+	bin := filepath.Join(installDir, binaryName)
+	_ = os.Remove(bin)
 	if runtime.GOOS == "windows" {
-		out += ".exe"
+		_ = os.Remove(bin + ".exe")
 	}
-	cmd := exec.Command("go", "build", "-o", out, ".")
-	cmd.Dir = repoRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("go build: %w", err)
-	}
-	return out, nil
 }
 
 func CopyBinary(src, destDir string) (string, error) {
@@ -260,34 +229,25 @@ func Run() error {
 		return err
 	}
 
-	fmt.Println("Removing existing aws-profile binary and completion scripts...")
-	removeExisting(installDir)
+	removeCompletionOnly()
 
-	var binaryPath string
-	repoRoot, inRepo := FindRepoRoot()
-	if inRepo {
-		fmt.Println("Building binary (go build)...")
-		binaryPath, err = BuildBinary(repoRoot)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Build done. Copying to install dir...")
-	} else {
-		fmt.Println("Not in project directory: copying current binary (no rebuild).")
-		fmt.Println("To install a new build, run 'go run . install' from the project.")
-		execPath, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("cannot get executable path: %w", err)
-		}
-		binaryPath = execPath
-	}
-
-	fmt.Printf("Installing to %s ...\n", installDir)
-	dest, err := CopyBinary(binaryPath, installDir)
+	execPath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("copy binary: %w", err)
+		return fmt.Errorf("cannot get executable path: %w", err)
 	}
-	fmt.Printf("Installed: %s\n", dest)
+	var dest string
+	execDir := filepath.Dir(execPath)
+	if execDir != installDir {
+		removeExistingBinary(installDir)
+		dest, err = CopyBinary(execPath, installDir)
+		if err != nil {
+			return fmt.Errorf("copy binary: %w", err)
+		}
+		fmt.Printf("Installed: %s\n", dest)
+	} else {
+		dest = execPath
+		fmt.Printf("Using: %s\n", dest)
+	}
 
 	shell, err := SelectShell()
 	if err != nil {

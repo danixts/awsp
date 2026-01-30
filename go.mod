@@ -10,6 +10,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/ini.v1 v1.67.1
 )
 
 require (

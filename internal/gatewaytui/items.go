@@ -36,24 +36,40 @@ func (e endpointItem) Title() string       { return e.Method + "  " + e.Path }
 func (e endpointItem) Description() string { return "" }
 func (e endpointItem) FilterValue() string { return e.Method + " " + e.Path }
 
-type themeItem struct {
-	name  string
-	index int
-}
-
-func (t themeItem) Title() string       { return t.name }
-func (t themeItem) Description() string { return "" }
-func (t themeItem) FilterValue() string { return t.name }
-
-func themeItemsFrom(themes []Theme) []list.Item {
-	out := make([]list.Item, 0, len(themes))
-	for i := range themes {
-		out = append(out, themeItem{name: themes[i].Name, index: i})
-	}
-	return out
-}
-
 const methodWidth = 7
+
+type apiDelegate struct {
+	list.DefaultDelegate
+}
+
+func (d apiDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	api, ok := item.(apiItem)
+	if !ok {
+		d.DefaultDelegate.Render(w, m, index, item)
+		return
+	}
+	t := currentTheme
+	if t == nil {
+		t = &Themes[0]
+	}
+
+	nameStyle := lipgloss.NewStyle()
+	idStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+
+	if index == m.Index() {
+		nameStyle = nameStyle.Foreground(lipgloss.Color(t.Accent)).Bold(true)
+		idStyle = idStyle.Foreground(lipgloss.Color(t.Accent))
+	}
+
+	line := nameStyle.Render(api.Name) + idStyle.Render(" · "+api.ID)
+	fmt.Fprint(w, line)
+}
+
+func (d apiDelegate) Height() int   { return d.DefaultDelegate.Height() }
+func (d apiDelegate) Spacing() int { return d.DefaultDelegate.Spacing() }
+func (d apiDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
+	return d.DefaultDelegate.Update(msg, m)
+}
 
 type endpointDelegate struct {
 	list.DefaultDelegate
@@ -68,7 +84,7 @@ func (d endpointDelegate) Render(w io.Writer, m list.Model, index int, item list
 	method := strings.ToUpper(ep.Method)
 	t := currentTheme
 	if t == nil {
-		t = &themes[0]
+		t = &Themes[0]
 	}
 	style := themeMethodStyle(t, method)
 	methodBadge := style.Render(method)
@@ -83,6 +99,36 @@ func (d endpointDelegate) Render(w io.Writer, m list.Model, index int, item list
 func (d endpointDelegate) Height() int   { return d.DefaultDelegate.Height() }
 func (d endpointDelegate) Spacing() int { return d.DefaultDelegate.Spacing() }
 func (d endpointDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
+	return d.DefaultDelegate.Update(msg, m)
+}
+
+type timeRangeDelegate struct {
+	list.DefaultDelegate
+}
+
+func (d timeRangeDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	tr, ok := item.(timeRangeItem)
+	if !ok {
+		d.DefaultDelegate.Render(w, m, index, item)
+		return
+	}
+	t := currentTheme
+	if t == nil {
+		t = &Themes[0]
+	}
+
+	style := lipgloss.NewStyle()
+	if index == m.Index() {
+		style = style.Foreground(lipgloss.Color(t.Accent)).Bold(true)
+	}
+
+	line := style.Render(tr.Label)
+	fmt.Fprint(w, line)
+}
+
+func (d timeRangeDelegate) Height() int   { return d.DefaultDelegate.Height() }
+func (d timeRangeDelegate) Spacing() int { return d.DefaultDelegate.Spacing() }
+func (d timeRangeDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
 	return d.DefaultDelegate.Update(msg, m)
 }
 

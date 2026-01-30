@@ -1,6 +1,8 @@
 package gatewaytui
 
 import (
+	"context"
+
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -18,17 +20,19 @@ const (
 )
 
 const (
-	panelMinWidth  = 24
-	panelMinHeight = 10
-	defaultSince   = "1h"
+	panelMinWidth   = 24
+	panelMinHeight  = 10
+	defaultSince    = "1h"
+	maxLogLinesTail = 500
+)
 
+const (
 	modalNone = iota
 	modalTimeSelect
 	modalLogView
-	modalThemeSelect
 )
 
-func panelBorderStyle(activeBorderColor, inactiveBorderColor string) (active, inactive lipgloss.Style) {
+func PanelBorderStyle(activeBorderColor, inactiveBorderColor string) (active, inactive lipgloss.Style) {
 	active = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color(activeBorderColor)).
@@ -65,16 +69,26 @@ type model struct {
 	quitting bool
 	spinner  spinner.Model
 
-	modalState      int
-	modalTimeList   list.Model
-	modalThemeList  list.Model
-	modalLogView    viewport.Model
-	modalContent    string
-	pendingLogGroup string
-	pendingSince    string
-	loadingForModal bool
-	logStreamCh     <-chan string
-	themeIndex      int
+	modalState       int
+	modalTimeList    list.Model
+	modalLogView     viewport.Model
+	modalContent     string
+	modalLogLines    []string
+	pendingLogGroup  string
+	pendingLogKey    string
+	pendingSince     string
+	loadingForModal  bool
+	logStreamCh      <-chan string
+	cancelLogStream  context.CancelFunc
+	themeIndex       int
+	currentMethod    string
+	currentPath      string
+}
+
+type logGroupLoadedMsg struct {
+	logGroup string
+	logKey   string
+	err      error
 }
 
 type logStreamStartedMsg struct {
@@ -96,6 +110,7 @@ type resourcesLoadedMsg struct {
 	apiID    string
 	resources []apigateway.ResourceWithMethods
 	err      error
+	preload  bool
 }
 
 type logsLoadedMsg struct {
@@ -104,26 +119,35 @@ type logsLoadedMsg struct {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(tea.WindowSize(), loadAPIsCmd, func() tea.Msg { return m.spinner.Tick() })
+	return tea.Batch(tea.WindowSize(), loadAPIsCmd(), func() tea.Msg { return m.spinner.Tick() })
 }
 
-func loadAPIsCmd() tea.Msg {
-	apis, err := apigateway.GetRestAPIs()
-	return apisLoadedMsg{apis: apis, err: err}
-}
-
-func loadResourcesCmd(apiID string) tea.Cmd {
+func loadAPIsCmd() tea.Cmd {
 	return func() tea.Msg {
-		resources, err := apigateway.GetResources(apiID)
-		return resourcesLoadedMsg{apiID: apiID, resources: resources, err: err}
+		apis, err := apigateway.GetRestAPIs()
+		return apisLoadedMsg{apis: apis, err: err}
 	}
 }
 
-func loadLogsStreamCmd(logGroup, since, region string) tea.Cmd {
+func loadResourcesCmd(apiID string, preload bool) tea.Cmd {
+	return func() tea.Msg {
+		resources, err := apigateway.GetResources(apiID)
+		return resourcesLoadedMsg{apiID: apiID, resources: resources, err: err, preload: preload}
+	}
+}
+
+func loadLogGroupCmd(apiID, resourceID, method, logKey string) tea.Cmd {
+	return func() tea.Msg {
+		lg, err := apigateway.GetIntegrationLambdaLogGroup(apiID, resourceID, method)
+		return logGroupLoadedMsg{logGroup: lg, logKey: logKey, err: err}
+	}
+}
+
+func loadLogsStreamCmd(ctx context.Context, logGroup, since, region string) tea.Cmd {
 	return func() tea.Msg {
 		ready := make(chan (<-chan string), 1)
 		go func() {
-			ready <- apigateway.TailLogsStream(logGroup, since, region)
+			ready <- apigateway.TailLogsStream(ctx, logGroup, since, region)
 		}()
 		return logStreamStartedMsg{ch: <-ready}
 	}
@@ -140,12 +164,19 @@ func waitForLogLineCmd(ch <-chan string) tea.Cmd {
 }
 
 func newModel(profile, region string) model {
-	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = false
-	delegate.SetSpacing(0)
+	apiDel := apiDelegate{DefaultDelegate: list.NewDefaultDelegate()}
+	apiDel.ShowDescription = false
+	apiDel.SetSpacing(0)
 
-	apiList := list.New([]list.Item{}, delegate, panelMinWidth, panelMinHeight)
+	themeIndex := 0
+	if name, _ := store.LoadGatewayTheme(); name != "" {
+		themeIndex = themeIndexByName(name)
+	}
+	t := &Themes[themeIndex]
+
+	apiList := list.New([]list.Item{}, apiDel, panelMinWidth, panelMinHeight)
 	apiList.Title = " APIs "
+	apiList.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color(t.ActiveBorder)).Bold(true)
 	apiList.SetShowStatusBar(false)
 	apiList.SetFilteringEnabled(true)
 	apiList.DisableQuitKeybindings()
@@ -155,6 +186,7 @@ func newModel(profile, region string) model {
 	resourceDelegate.SetSpacing(0)
 	resourceList := list.New([]list.Item{}, resourceDelegate, panelMinWidth, panelMinHeight)
 	resourceList.Title = " Endpoints "
+	resourceList.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color(t.ActiveBorder)).Bold(true)
 	resourceList.SetShowStatusBar(false)
 	resourceList.SetFilteringEnabled(true)
 	resourceList.DisableQuitKeybindings()
@@ -162,11 +194,11 @@ func newModel(profile, region string) model {
 	vp := viewport.New(panelMinWidth, panelMinHeight)
 	vp.Style = lipgloss.NewStyle()
 
-	timeDelegate := list.NewDefaultDelegate()
-	timeDelegate.ShowDescription = false
-	timeDelegate.SetSpacing(0)
+	timeDel := timeRangeDelegate{DefaultDelegate: list.NewDefaultDelegate()}
+	timeDel.ShowDescription = false
+	timeDel.SetSpacing(0)
 	timeItems := timeRangeItemsFrom(apigateway.DefaultTimeRanges)
-	modalTimeList := list.New(timeItems, timeDelegate, 32, 14)
+	modalTimeList := list.New(timeItems, timeDel, 32, 14)
 	modalTimeList.Title = " Time range "
 	modalTimeList.SetShowStatusBar(false)
 	modalTimeList.DisableQuitKeybindings()
@@ -174,26 +206,13 @@ func newModel(profile, region string) model {
 	modalVp := viewport.New(60, 18)
 	modalVp.Style = lipgloss.NewStyle()
 
-	themeDelegate := list.NewDefaultDelegate()
-	themeDelegate.ShowDescription = false
-	themeDelegate.SetSpacing(0)
-	themeIndex := 0
-	if name, _ := store.LoadGatewayTheme(); name != "" {
-		themeIndex = themeIndexByName(name)
-	}
-	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))))
-	modalThemeList := list.New(themeItemsFrom(themes), themeDelegate, 28, 12)
-	modalThemeList.Title = " Theme "
-	modalThemeList.SetShowStatusBar(false)
-	modalThemeList.DisableQuitKeybindings()
-	modalThemeList.Select(themeIndex)
+	s := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color(t.Loading))))
 
 	return model{
 		apiList:         apiList,
 		resourceList:    resourceList,
 		logViewport:     vp,
 		modalTimeList:   modalTimeList,
-		modalThemeList:  modalThemeList,
 		modalLogView:    modalVp,
 		spinner:         s,
 		focus:           focusAPIs,

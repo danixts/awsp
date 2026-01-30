@@ -10,10 +10,15 @@ func (m model) View() string {
 	if m.quitting {
 		return ""
 	}
-	t := &themes[m.themeIndex]
+	t := &Themes[m.themeIndex]
 	currentTheme = t
 
-	half := m.width / 2
+	usableW := m.width * 94 / 100
+	if usableW < panelMinWidth*2 {
+		usableW = panelMinWidth * 2
+	}
+
+	half := usableW / 2
 	panelW := half
 	if panelW < panelMinWidth {
 		panelW = panelMinWidth
@@ -25,9 +30,9 @@ func (m model) View() string {
 
 	apiContent := m.apiList.View()
 	if len(m.apis) == 0 && m.loading == "" && m.err == "" {
-		apiContent = "\n  Loading API Gateways..."
+		apiContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Loading)).Render("Loading API Gateways...")
 	} else if len(m.apis) == 0 && m.loading == "" {
-		apiContent = "\n  No APIs (press R to retry)"
+		apiContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("No APIs (press R to retry)")
 	} else if m.loading == "Loading APIs..." {
 		apiContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Loading)).Render(m.spinner.View()+" Loading API Gateways...")
 	}
@@ -36,16 +41,10 @@ func (m model) View() string {
 	if m.loading != "" && (m.loading == "Loading endpoints..." || m.loading == "Loading resources...") {
 		resourceContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Loading)).Render(m.spinner.View()+" Loading...")
 	} else if m.selectedAPI == nil {
-		resourceContent = "\n  Select an API (left), then Enter"
+		resourceContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("Select an API (left), then Enter")
 	} else if len(m.endpoints) == 0 {
-		resourceContent = "\n  No endpoints with methods"
+		resourceContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("No endpoints with methods")
 	}
-
-	activeBorder, inactiveBorder := panelBorderStyle(t.ActiveBorder, t.InactiveBorder)
-	apiBox := panelBorder(activeBorder, inactiveBorder, m.focus == focusAPIs, " API Gateways ", apiContent, panelW, panelH)
-	resourceBox := panelBorder(activeBorder, inactiveBorder, m.focus == focusResources, " Endpoints ", resourceContent, panelW, panelH)
-
-	row := lipgloss.JoinHorizontal(lipgloss.Top, apiBox, resourceBox)
 
 	profileStr := m.profile
 	if profileStr == "" {
@@ -55,7 +54,37 @@ func (m model) View() string {
 	if regionStr == "" {
 		regionStr = "(not set)"
 	}
-	headerW := m.width
+	apiTitleColor := t.InactiveBorder
+	if m.focus == focusAPIs {
+		apiTitleColor = t.ActiveBorder
+	}
+	apiTitleText := lipgloss.NewStyle().Foreground(lipgloss.Color(apiTitleColor)).Bold(true).Render(" API Gateways ")
+	profileBadge := lipgloss.NewStyle().
+		Background(lipgloss.Color(t.ProfileBg)).
+		Foreground(lipgloss.Color(t.ProfileFg)).
+		Bold(true).
+		Padding(0, 1).
+		Render(" PROFILE: " + profileStr + " ")
+	regionBadge := lipgloss.NewStyle().
+		Background(lipgloss.Color(t.ProfileBg)).
+		Foreground(lipgloss.Color(t.ProfileFg)).
+		Bold(true).
+		Padding(0, 1).
+		Render(" REGION: " + regionStr + " ")
+	apiTitle := lipgloss.JoinHorizontal(lipgloss.Center, apiTitleText, " ", profileBadge, " ", regionBadge)
+
+	activeBorder, inactiveBorder := PanelBorderStyle(t.ActiveBorder, t.InactiveBorder)
+	endpointsTitleColor := t.InactiveBorder
+	if m.focus == focusResources {
+		endpointsTitleColor = t.ActiveBorder
+	}
+	endpointsTitle := lipgloss.NewStyle().Foreground(lipgloss.Color(endpointsTitleColor)).Bold(true).Render(" Endpoints ")
+	apiBox := panelBorder(activeBorder, inactiveBorder, m.focus == focusAPIs, apiTitle, apiContent, panelW, panelH)
+	resourceBox := panelBorder(activeBorder, inactiveBorder, m.focus == focusResources, endpointsTitle, resourceContent, panelW, panelH)
+
+	row := lipgloss.JoinHorizontal(lipgloss.Top, apiBox, resourceBox)
+
+	headerW := usableW
 	if headerW < 50 {
 		headerW = 50
 	}
@@ -68,7 +97,8 @@ func (m model) View() string {
 		Padding(0, 1).
 		Width(headerW).
 		Align(lipgloss.Left)
-	profilePanelContent := " Profile: " + profileStr + "  ·  Region: " + regionStr + "  ·  t=theme "
+	themeName := Themes[m.themeIndex].Name
+	profilePanelContent := " Profile: " + profileStr + "  ·  Region: " + regionStr + "  ·  Theme: " + themeName + " "
 	header := profilePanelStyle.Render(profilePanelContent)
 
 	var body strings.Builder
@@ -82,31 +112,19 @@ func (m model) View() string {
 	}
 	body.WriteString(row)
 	body.WriteString("\n")
-	help := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("  API Gateways (left) · Endpoints (right) · Enter=load/open logs · Tab/←/→ · R reload · t=theme · Esc · q quit")
+	help := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("  Tab/←/→ panels · Enter=select · R reload · t/T=theme · Esc back · q quit")
 	body.WriteString(help)
 
 	mainView := lipgloss.JoinVertical(lipgloss.Left, header, body.String())
-	b := mainView
+	b := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, mainView)
 
 	if m.modalState != modalNone {
 		modalStyle := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(t.ModalBorder)).
 			Padding(0, 1)
-		if m.modalState == modalThemeSelect {
-			modalW := m.width - 12
-			if modalW > 44 {
-				modalW = 44
-			}
-			modalH := m.height - 8
-			if modalH > 18 {
-				modalH = 18
-			}
-			box := modalStyle.Width(modalW).Height(modalH).Render(" Theme · Enter=apply · Esc cancel\n\n" + m.modalThemeList.View())
-			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
-		}
 		if m.modalState == modalTimeSelect {
-			modalW := m.width - 8
+			modalW := usableW - 8
 			if modalW > 70 {
 				modalW = 70
 			}
@@ -114,18 +132,29 @@ func (m model) View() string {
 			if modalH > 22 {
 				modalH = 22
 			}
-			box := modalStyle.Width(modalW).Height(modalH).Render(" Time range · Esc cancel\n\n" + m.modalTimeList.View())
+			timeTitle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.Accent)).Render(" Time range ") + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("· Esc cancel")
+			box := modalStyle.Width(modalW).Height(modalH).Render(timeTitle + "\n\n" + m.modalTimeList.View())
 			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 		}
-		logContent := m.modalLogView.View()
+		logVp := m.modalLogView
+		logVp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(t.LogContent))
+		logContent := logVp.View()
 		if m.loadingForModal && m.modalContent == "" {
 			logContent = "\n  " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Loading)).Render(m.spinner.View()+" Streaming...")
 		}
+
+		endpointInfo := ""
+		if m.currentMethod != "" && m.currentPath != "" {
+			methodStyle := themeMethodStyle(t, m.currentMethod)
+			endpointInfo = " " + methodStyle.Render(" "+m.currentMethod+" ") + " " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Accent)).Render(m.currentPath) + " · "
+		}
+		logsTitle := endpointInfo + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Accent)).Render("Logs") + " " + lipgloss.NewStyle().Foreground(lipgloss.Color(t.Help)).Render("· Esc close")
+
 		fullModal := modalStyle.
-			Width(m.width).
-			Height(m.height).
-			Render(" Logs · Esc close\n\n" + logContent)
-		return fullModal
+			Width(usableW).
+			Height(m.height - 2).
+			Render(" " + logsTitle + "\n\n" + logContent)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullModal)
 	}
 	return b
 }

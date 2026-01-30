@@ -10,6 +10,7 @@ import (
 	"github.com/danixts/awsp/internal/msg"
 	"github.com/danixts/awsp/internal/selector"
 	"github.com/danixts/awsp/internal/gatewaytui"
+	"github.com/danixts/awsp/internal/service/cloudwatch"
 	"github.com/danixts/awsp/internal/store"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ var (
 	flagValidate bool
 	flagFull     bool
 	flagGateway  bool
+	flagLogs     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -75,8 +77,8 @@ var favoriteListCmd = &cobra.Command{
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Build, install binary and configure shell (zsh/bash/Windows)",
-	Long:  "Builds the binary, copies it to a PATH directory, then asks for your shell to add awsenv and completion.",
+	Short: "Configure shell (zsh/bash/Windows) for awsp and completion",
+	Long:  "Adds PATH, awsp wrapper and completion to your shell config. Run after downloading the binary (e.g. via install.sh).",
 	RunE:  runInstall,
 }
 
@@ -87,10 +89,18 @@ var gatewayCmd = &cobra.Command{
 	RunE:  runGateway,
 }
 
+var logsCmd = &cobra.Command{
+	Use:   "logs",
+	Short: "Browse and stream CloudWatch log groups (interactive)",
+	Long:  "Lists CloudWatch log groups, lets you pick one and stream logs in real time.",
+	RunE:  runLogs,
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&flagFull, "full", "f", false, "Export all AWS vars (including AWS_SDK_LOAD_CONFIG)")
 	rootCmd.PersistentFlags().BoolVarP(&flagValidate, "validate", "v", false, "Verify credentials with aws sts get-caller-identity")
 	rootCmd.PersistentFlags().BoolVarP(&flagGateway, "gateway", "g", false, "Open API Gateway interactive (list APIs, view methods, logs)")
+	rootCmd.PersistentFlags().BoolVarP(&flagLogs, "logs", "l", false, "Open CloudWatch logs interactive (browse and stream log groups)")
 
 	rootCmd.AddCommand(switchCmd)
 	rootCmd.AddCommand(listCmd)
@@ -98,6 +108,7 @@ func init() {
 	rootCmd.AddCommand(favoriteCmd)
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(gatewayCmd)
+	rootCmd.AddCommand(logsCmd)
 
 	favoriteCmd.AddCommand(favoriteAddCmd)
 	favoriteCmd.AddCommand(favoriteRemoveCmd)
@@ -131,10 +142,20 @@ func curProfileAndRegion() (profile, region string) {
 			region = last.Region
 		}
 	}
+	if region == "" {
+		if profiles, err := aws.LoadProfiles(); err == nil {
+			if p, found := aws.FindProfile(profiles, profile); found && p.Region != "" {
+				region = p.Region
+			}
+		}
+	}
 	return profile, region
 }
 
 func runInteractive(cmd *cobra.Command, args []string) error {
+	if flagLogs {
+		return runLogs(cmd, args)
+	}
 	if flagGateway {
 		return runGateway(cmd, args)
 	}
@@ -298,6 +319,28 @@ func runFavoriteList(cmd *cobra.Command, args []string) error {
 
 func runInstall(cmd *cobra.Command, args []string) error {
 	return install.Run()
+}
+
+func runLogs(cmd *cobra.Command, args []string) error {
+	if !isatty.IsTerminal(os.Stdout.Fd()) {
+		fmt.Fprintln(os.Stderr, "awsp logs requires an interactive terminal")
+		os.Exit(1)
+	}
+	profile, region := curProfileAndRegion()
+	if profile == "" || profile == aws.DefaultProfile {
+		if last, err := store.LoadLast(); err == nil && last.Profile != "" {
+			profile = last.Profile
+		}
+		if profile == "" {
+			profile = aws.DefaultProfile
+		}
+	}
+	if region == "" {
+		if last, err := store.LoadLast(); err == nil && last.Region != "" {
+			region = last.Region
+		}
+	}
+	return cloudwatch.Run(profile, region)
 }
 
 func runGateway(cmd *cobra.Command, args []string) error {
