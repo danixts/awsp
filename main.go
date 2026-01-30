@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/danixts/awsp/internal/apigateway"
 	"github.com/danixts/awsp/internal/aws"
 	"github.com/danixts/awsp/internal/install"
 	"github.com/danixts/awsp/internal/msg"
 	"github.com/danixts/awsp/internal/selector"
+	"github.com/danixts/awsp/internal/gatewaytui"
 	"github.com/danixts/awsp/internal/store"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -305,99 +305,21 @@ func runGateway(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "awsp gateway requires an interactive terminal")
 		os.Exit(1)
 	}
-	var cachedAPIs []apigateway.RestAPI
-	cachedResources := make(map[string][]apigateway.ResourceWithMethods)
-	cachedLogGroups := make(map[string]string)
-	region := os.Getenv("AWS_REGION")
+	profile, region := curProfileAndRegion()
+	if profile == "" || profile == aws.DefaultProfile {
+		if last, err := store.LoadLast(); err == nil && last.Profile != "" {
+			profile = last.Profile
+		}
+		if profile == "" {
+			profile = aws.DefaultProfile
+		}
+	}
 	if region == "" {
-		region = os.Getenv("AWS_DEFAULT_REGION")
+		if last, err := store.LoadLast(); err == nil && last.Region != "" {
+			region = last.Region
+		}
 	}
-	for {
-		if len(cachedAPIs) == 0 {
-			apis, err := apigateway.GetRestAPIs()
-			if err != nil {
-				fmt.Printf(msg.ErrGatewayList, err)
-				os.Exit(1)
-			}
-			if len(apis) == 0 {
-				fmt.Print(msg.NoGateways)
-				os.Exit(0)
-			}
-			cachedAPIs = apis
-		}
-		selected, reloadAPIs, err := selector.RunGatewayAPISelector(cachedAPIs, true)
-		if err != nil {
-			fmt.Println(msg.Canceled)
-			os.Exit(0)
-		}
-		if reloadAPIs {
-			cachedAPIs = nil
-			continue
-		}
-		resources, ok := cachedResources[selected.ID]
-		if !ok {
-			var err error
-			resources, err = apigateway.GetResources(selected.ID)
-			if err != nil {
-				fmt.Printf(msg.ErrGatewayResources, err)
-				os.Exit(1)
-			}
-			cachedResources[selected.ID] = resources
-		}
-		fmt.Printf(msg.GatewayResources, selected.Name)
-		fmt.Print(apigateway.FormatResourcesTable(resources))
-		for {
-			choice, err := selector.RunAfterResourcesSelector()
-			if err != nil {
-				fmt.Println(msg.Canceled)
-				os.Exit(0)
-			}
-			switch choice {
-			case selector.ChoiceExit:
-				return nil
-			case selector.ChoiceBack:
-				goto nextAPI
-			case selector.ChoiceReload:
-				delete(cachedResources, selected.ID)
-				var err error
-				resources, err = apigateway.GetResources(selected.ID)
-				if err != nil {
-					fmt.Printf(msg.ErrGatewayResources, err)
-					os.Exit(1)
-				}
-				cachedResources[selected.ID] = resources
-				fmt.Printf(msg.GatewayResources, selected.Name)
-				fmt.Print(apigateway.FormatResourcesTable(resources))
-				continue
-			case selector.ChoiceViewLogs:
-				endpoints := apigateway.EndpointsFromResources(resources)
-				ep, err := selector.RunEndpointSelector(endpoints)
-				if err != nil {
-					fmt.Println(msg.Canceled)
-					continue
-				}
-				logKey := selected.ID + ":" + ep.ResourceID + ":" + ep.Method
-				logGroup, ok := cachedLogGroups[logKey]
-				if !ok {
-					var err error
-					logGroup, err = apigateway.GetIntegrationLambdaLogGroup(selected.ID, ep.ResourceID, ep.Method)
-					if err != nil {
-						fmt.Printf(msg.ErrGatewayIntegration, err)
-						continue
-					}
-					cachedLogGroups[logKey] = logGroup
-				}
-				since, err := selector.RunTimeRangeSelector(apigateway.DefaultTimeRanges)
-				if err != nil {
-					fmt.Println(msg.Canceled)
-					continue
-				}
-				fmt.Printf(msg.GatewayLogsTail, logGroup)
-				_ = apigateway.TailLogs(logGroup, since, region, true)
-			}
-		}
-	nextAPI:
-	}
+	return gatewaytui.Run(profile, region)
 }
 
 func main() {

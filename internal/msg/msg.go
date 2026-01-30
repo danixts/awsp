@@ -24,5 +24,5 @@ const (
 	NoGateways            = "No API Gateways found\n"
 	GatewayResources      = "\nResources and methods for %s:\n\n"
 	ErrGatewayIntegration = "Endpoint is not Lambda or integration not found: %v\n"
-	GatewayLogsTail       = "\nTailing logs for %s — Press 'q' + Enter to stop (or Ctrl+C)\n\n"
+	GatewayLogsTail       = "\nTailing logs for %s — Ctrl+C to stop\n\n"
 )

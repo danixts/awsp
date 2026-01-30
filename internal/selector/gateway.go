@@ -24,14 +24,14 @@ func RunGatewayAPISelector(apis []apigateway.RestAPI, withReload bool) (*apigate
 		items = append(items, gatewayAPIItem{Label: a.Name + "  ·  " + a.ID, API: a, IsReload: false})
 	}
 	if withReload {
-		items = append(items, gatewayAPIItem{Label: "🔄 Reload API list", API: nil, IsReload: true})
+		items = append(items, gatewayAPIItem{Label: "Reload API list", API: nil, IsReload: true})
 	}
 	tpl := &promptui.SelectTemplates{
 		Label:    "{{ . }}",
-		Active:   "► {{ .Label | cyan }}",
-		Inactive: "  {{ .Label }}",
-		Selected: "✓ {{ .Label | green }}",
-		Details:  "{{ if .API }}\n  API: {{ .API.Name }}  |  ID: {{ .API.ID }}{{ end }}",
+		Active:   "  ▸ {{ .Label | cyan }}",
+		Inactive: "    {{ .Label }}",
+		Selected: "  ✓ {{ .Label | green }}",
+		Details:  "{{ if .API }}\n    {{ .API.Name }}  ·  {{ .API.ID }}{{ end }}",
 	}
 	search := func(input string, i int) bool {
 		it := items[i]
@@ -42,7 +42,7 @@ func RunGatewayAPISelector(apis []apigateway.RestAPI, withReload bool) (*apigate
 		return strings.Contains(strings.ToLower(it.API.Name), q) || strings.Contains(strings.ToLower(it.API.ID), q)
 	}
 	sel := promptui.Select{
-		Label:     "Select API Gateway:",
+		Label:     "Choose one",
 		Items:     items,
 		Templates: tpl,
 		Size:      10,
@@ -60,30 +60,30 @@ func RunGatewayAPISelector(apis []apigateway.RestAPI, withReload bool) (*apigate
 }
 
 const (
-	viewLogsOption = "View logs for an endpoint"
-	backOption     = "← Back to API list"
-	reloadOption   = "🔄 Reload (refresh resources)"
-	exitOption     = "Exit"
+	viewTableOption = "View resources table"
+	backOption      = "Back to API list"
+	reloadOption    = "Reload (refresh resources)"
+	exitOption      = "Exit"
 )
 
 type AfterResourcesChoice int
 
 const (
-	ChoiceViewLogs AfterResourcesChoice = iota
+	ChoiceViewTable AfterResourcesChoice = iota
 	ChoiceBack
 	ChoiceReload
 	ChoiceExit
 )
 
 func RunAfterResourcesSelector() (AfterResourcesChoice, error) {
-	items := []string{viewLogsOption, backOption, reloadOption, exitOption}
+	items := []string{viewTableOption, backOption, reloadOption, exitOption}
 	sel := promptui.Select{
-		Label: "What next?",
+		Label: "Choose one",
 		Items: items,
 		Templates: &promptui.SelectTemplates{
-			Active:   "► {{ . | cyan }}",
-			Inactive: "  {{ . }}",
-			Selected: "✓ {{ . | green }}",
+			Active:   "  ▸ {{ . | cyan }}",
+			Inactive: "    {{ . }}",
+			Selected: "  ✓ {{ . | green }}",
 		},
 	}
 	idx, _, err := sel.Run()
@@ -99,10 +99,10 @@ func RunEndpointSelector(endpoints []apigateway.Endpoint) (*apigateway.Endpoint,
 	}
 	tpl := &promptui.SelectTemplates{
 		Label:    "{{ . }}",
-		Active:   "► {{ .Path | cyan }}  {{ .Method }}",
-		Inactive: "  {{ .Path }}  {{ .Method }}",
-		Selected: "✓ {{ .Path | green }}  {{ .Method }}",
-		Details:  "\n  Path: {{ .Path }}  |  Method: {{ .Method }}",
+		Active:   "  ▸ {{ .Path | cyan }}  {{ .Method }}",
+		Inactive: "    {{ .Path }}  {{ .Method }}",
+		Selected: "  ✓ {{ .Path | green }}  {{ .Method }}",
+		Details:  "\n    Path: {{ .Path }}  ·  Method: {{ .Method }}",
 	}
 	search := func(input string, i int) bool {
 		e := endpoints[i]
@@ -110,7 +110,7 @@ func RunEndpointSelector(endpoints []apigateway.Endpoint) (*apigateway.Endpoint,
 		return strings.Contains(strings.ToLower(e.Path), q) || strings.Contains(strings.ToLower(e.Method), q)
 	}
 	sel := promptui.Select{
-		Label:     "Select endpoint:",
+		Label:     "Choose one",
 		Items:     endpoints,
 		Templates: tpl,
 		Size:      12,
@@ -129,12 +129,12 @@ func RunTimeRangeSelector(ranges []apigateway.TimeRange) (since string, err erro
 	}
 	tpl := &promptui.SelectTemplates{
 		Label:    "{{ . }}",
-		Active:   "► {{ .Label | cyan }}",
-		Inactive: "  {{ .Label }}",
-		Selected: "✓ {{ .Label | green }}",
+		Active:   "  ▸ {{ .Label | cyan }}",
+		Inactive: "    {{ .Label }}",
+		Selected: "  ✓ {{ .Label | green }}",
 	}
 	sel := promptui.Select{
-		Label:     "Time range:",
+		Label:     "Choose one",
 		Items:     ranges,
 		Templates: tpl,
 		Size:      10,

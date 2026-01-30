@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	configDir  = ".config/awsp"
-	lastFile   = "last.json"
-	favsFile   = "favorites"
+	configDir    = ".config/awsp"
+	lastFile     = "last.json"
+	favsFile     = "favorites"
+	gatewayTheme = "gateway_theme.json"
 )
 
 type LastUsed struct {
@@ -120,4 +121,39 @@ func IsFavorite(profile string, favs []string) bool {
 		}
 	}
 	return false
+}
+
+type GatewayTheme struct {
+	Theme string `json:"theme"`
+}
+
+func LoadGatewayTheme() (string, error) {
+	dir, err := configPath()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, gatewayTheme))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	var g GatewayTheme
+	if err := json.Unmarshal(data, &g); err != nil {
+		return "", err
+	}
+	return g.Theme, nil
+}
+
+func SaveGatewayTheme(themeName string) error {
+	dir, err := ensureDir()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(GatewayTheme{Theme: themeName})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, gatewayTheme), data, 0600)
 }

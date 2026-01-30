@@ -3,11 +3,18 @@ package apigateway
 import (
 	"fmt"
 	"strings"
+
+	"github.com/fatih/color"
+)
+
+var (
+	tableHeader = color.New(color.FgHiBlack).SprintFunc()
+	tableDim    = color.New(color.FgHiBlack).SprintFunc()
 )
 
 func FormatResourcesTable(resources []ResourceWithMethods) string {
 	if len(resources) == 0 {
-		return "  (no resources with methods)\n"
+		return "  " + tableDim("(no resources with methods)") + "\n"
 	}
 	maxPath := 4
 	for _, r := range resources {
@@ -20,8 +27,11 @@ func FormatResourcesTable(resources []ResourceWithMethods) string {
 		pathW = 12
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "  %-*s  %s\n", pathW, "path", "methods")
-	fmt.Fprintf(&b, "  %-*s  %s\n", pathW, "----", "-------")
+	b.WriteString("  ")
+	b.WriteString(tableHeader(fmt.Sprintf("%-*s  %s", pathW, "path", "methods")))
+	b.WriteString("\n  ")
+	b.WriteString(tableDim(fmt.Sprintf("%-*s  %s", pathW, "──", "───────")))
+	b.WriteString("\n")
 	for _, r := range resources {
 		methods := strings.Join(r.Methods, ", ")
 		fmt.Fprintf(&b, "  %-*s  %s\n", pathW, r.Path, methods)
