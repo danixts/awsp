@@ -42,6 +42,16 @@ awsp switch prod us-east-1    # usar perfil prod y región us-east-1
 eval $(awsp switch prod)      # aplicar en la shell
 ```
 
+### Ejemplos visuales
+
+**Menú perfil y región** (`awsp`)
+
+![Selector de perfil y región](imgs/switch-env.png)
+
+**API Gateway** (`awsp -g`)
+
+![API Gateway TUI](imgs/gateway.png)
+
 ## Requisitos
 
 - Perfiles en `~/.aws/credentials`
